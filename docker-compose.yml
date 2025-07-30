@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  medical-report-api:
+    build: .
+    ports:
+      - "7700:7700"
+    environment:
+      - POSTGRES_HOST=10.1.27.65
+      - POSTGRES_PORT=5432
+      - POSTGRES_DATABASE=medical_reports
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=admin123
+      - LLM_API_URL=http://localhost:11434/api/generate
+      - LLM_MODEL=llama3.1
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    networks:
+      - medical-net
+
+  postgres:
+    image: postgres:13
+    environment:
+      - POSTGRES_DB=medical_reports
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=admin123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - medical-net
+
+volumes:
+  postgres_data:
+
+networks:
+  medical-net:
+    driver: bridge 
