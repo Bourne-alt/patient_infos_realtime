@@ -7,13 +7,15 @@ import logging
 from typing import Generator
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
-
+from dotenv import load_dotenv
 from singletons import get_database_session, get_medical_analyzer
 from database_service import DatabaseService
 from langchain_service import MedicalReportAnalyzer
 from exceptions import ErrorHandler, DatabaseError
 
 logger = logging.getLogger(__name__)
+
+load_dotenv()
 
 
 def get_db() -> Generator[Session, None, None]:

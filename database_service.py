@@ -11,8 +11,11 @@ from sqlalchemy import desc, and_, or_
 from models import (
     MedicalReport, ReportComparisonAnalysis, PatientInfo
 )
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
+
+load_dotenv()
 
 class DatabaseService:
     """数据库服务类"""
@@ -455,31 +458,37 @@ class DatabaseService:
         try:
             # 查询该患者最新的记录（按reg_date或created_at倒序）
             patient_record = self.db.query(PatientInfo).filter(
-                PatientInfo.card_no == card_no
+                PatientInfo.card_no == card_no,
+                PatientInfo.lis_result_detail.isnot(None),  # 确保有检验结果
+                PatientInfo.lis_result_detail != ""         # 确保非空字符串
             ).order_by(
                 desc(PatientInfo.reg_date), 
                 desc(PatientInfo.created_at)
             ).first()
             
-            if patient_record and patient_record.lis_result_detail:
+            if patient_record:
+                # 标准化日期处理
+                reg_date_str = str(patient_record.reg_date) if patient_record.reg_date else ""
+                
                 result = {
                     "id": patient_record.id,
                     "card_no": patient_record.card_no,
-                    "patient_name": patient_record.patient_name,
+                    "patient_name": patient_record.patient_name or "",
                     "reg_date": patient_record.reg_date,
-                    "lis_result_detail": patient_record.lis_result_detail,
+                    "reg_date_str": reg_date_str,
+                    "lis_result_detail": patient_record.lis_result_detail.strip(),  # 去除首尾空白
                     "created_at": patient_record.created_at,
                     "updated_at": patient_record.updated_at
                 }
                 
-                logger.info(f"获取到最新检验结果详情 - 患者: {card_no}, 登记日期: {patient_record.reg_date}")
+                logger.info(f"获取到最新检验结果详情 - 患者: {card_no}, 登记日期: {reg_date_str}")
                 return result
             else:
-                logger.warning(f"未找到患者检验结果详情 - 患者卡号: {card_no}")
+                logger.info(f"未找到患者有效检验结果详情 - 患者卡号: {card_no}")
                 return None
                 
         except Exception as e:
-            logger.error(f"获取最新检验结果详情失败: {e}")
+            logger.error(f"获取最新检验结果详情失败: {card_no} - {e}")
             return None
     
     def get_patient_info_history(
@@ -518,6 +527,9 @@ class DatabaseService:
                     "dept_name": record.dept_name,
                     "lis_result_detail": record.lis_result_detail,
                     "ai_report": record.ai_report,
+                    "pathology_reports": record.pathology_reports,
+                    "pacs_reports": record.pacs_reports,
+                    "microbiological_reports": record.microbiological_reports,
                     "created_at": record.created_at,
                     "updated_at": record.updated_at
                 }
@@ -528,4 +540,130 @@ class DatabaseService:
             
         except Exception as e:
             logger.error(f"获取患者历史检验记录失败: {e}")
-            return [] 
+            return []
+
+    def get_latest_pathology_reports(self, card_no: str) -> Optional[Dict[str, Any]]:
+        """
+        从patient_info表中获取最新的病理报告
+        
+        Args:
+            card_no: 患者卡号
+            
+        Returns:
+            最新的病理报告数据，如果找不到则返回None
+        """
+        try:
+            patient_record = self.db.query(PatientInfo).filter(
+                PatientInfo.card_no == card_no,
+                PatientInfo.pathology_reports.isnot(None),
+                PatientInfo.pathology_reports != ""
+            ).order_by(
+                desc(PatientInfo.reg_date), 
+                desc(PatientInfo.created_at)
+            ).first()
+            
+            if patient_record:
+                reg_date_str = str(patient_record.reg_date) if patient_record.reg_date else ""
+                result = {
+                    "id": patient_record.id,
+                    "card_no": patient_record.card_no,
+                    "patient_name": patient_record.patient_name or "",
+                    "reg_date": patient_record.reg_date,
+                    "reg_date_str": reg_date_str,
+                    "pathology_reports": patient_record.pathology_reports.strip(),
+                    "created_at": patient_record.created_at,
+                    "updated_at": patient_record.updated_at
+                }
+                logger.info(f"获取到最新病理报告 - 患者: {card_no}, 登记日期: {reg_date_str}")
+                return result
+            else:
+                logger.info(f"未找到患者病理报告 - 患者卡号: {card_no}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"获取最新病理报告失败: {card_no} - {e}")
+            return None
+
+    def get_latest_pacs_reports(self, card_no: str) -> Optional[Dict[str, Any]]:
+        """
+        从patient_info表中获取最新的PACS检查报告
+        
+        Args:
+            card_no: 患者卡号
+            
+        Returns:
+            最新的PACS检查报告数据，如果找不到则返回None
+        """
+        try:
+            patient_record = self.db.query(PatientInfo).filter(
+                PatientInfo.card_no == card_no,
+                PatientInfo.pacs_reports.isnot(None),
+                PatientInfo.pacs_reports != ""
+            ).order_by(
+                desc(PatientInfo.reg_date), 
+                desc(PatientInfo.created_at)
+            ).first()
+            
+            if patient_record:
+                reg_date_str = str(patient_record.reg_date) if patient_record.reg_date else ""
+                result = {
+                    "id": patient_record.id,
+                    "card_no": patient_record.card_no,
+                    "patient_name": patient_record.patient_name or "",
+                    "reg_date": patient_record.reg_date,
+                    "reg_date_str": reg_date_str,
+                    "pacs_reports": patient_record.pacs_reports.strip(),
+                    "created_at": patient_record.created_at,
+                    "updated_at": patient_record.updated_at
+                }
+                logger.info(f"获取到最新PACS检查报告 - 患者: {card_no}, 登记日期: {reg_date_str}")
+                return result
+            else:
+                logger.info(f"未找到患者PACS检查报告 - 患者卡号: {card_no}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"获取最新PACS检查报告失败: {card_no} - {e}")
+            return None
+
+    def get_latest_microbiological_reports(self, card_no: str) -> Optional[Dict[str, Any]]:
+        """
+        从patient_info表中获取最新的微生物报告
+        
+        Args:
+            card_no: 患者卡号
+            
+        Returns:
+            最新的微生物报告数据，如果找不到则返回None
+        """
+        try:
+            patient_record = self.db.query(PatientInfo).filter(
+                PatientInfo.card_no == card_no,
+                PatientInfo.microbiological_reports.isnot(None),
+                PatientInfo.microbiological_reports != ""
+            ).order_by(
+                desc(PatientInfo.reg_date), 
+                desc(PatientInfo.created_at)
+            ).first()
+            
+            if patient_record:
+                reg_date_str = str(patient_record.reg_date) if patient_record.reg_date else ""
+                result = {
+                    "id": patient_record.id,
+                    "card_no": patient_record.card_no,
+                    "patient_name": patient_record.patient_name or "",
+                    "reg_date": patient_record.reg_date,
+                    "reg_date_str": reg_date_str,
+                    "microbiological_reports": patient_record.microbiological_reports.strip(),
+                    "created_at": patient_record.created_at,
+                    "updated_at": patient_record.updated_at
+                }
+                logger.info(f"获取到最新微生物报告 - 患者: {card_no}, 登记日期: {reg_date_str}")
+                return result
+            else:
+                logger.info(f"未找到患者微生物报告 - 患者卡号: {card_no}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"获取最新微生物报告失败: {card_no} - {e}")
+            return None 

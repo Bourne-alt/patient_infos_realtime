@@ -230,6 +230,31 @@ class PathologyReportDB(BaseModel):
     class Config:
         from_attributes = True
 
+class PatientInfoDB(BaseModel):
+    """患者信息数据库模型"""
+    id: int
+    card_no: str
+    clinic_code: Optional[str] = None
+    patient_name: Optional[str] = None
+    sex_code: Optional[str] = None
+    dept_code: Optional[str] = None
+    dept_name: Optional[str] = None
+    reg_date: Optional[datetime] = None
+    doctor_code: Optional[str] = None
+    allergy_history: Optional[str] = None
+    discharge_summary: Optional[str] = None
+    discharge_info: Optional[str] = None
+    lis_result_detail: Optional[str] = None
+    ai_report: Optional[str] = None
+    pathology_reports: Optional[str] = None
+    pacs_reports: Optional[str] = None
+    microbiological_reports: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
 class ReportComparisonAnalysisDB(BaseModel):
     """报告对比分析数据库模型"""
     id: int
@@ -255,4 +280,4 @@ class ReportComparisonAnalysisDB(BaseModel):
     updated_at: datetime
 
     class Config:
-        from_attributes = True 
+        from_attributes = True

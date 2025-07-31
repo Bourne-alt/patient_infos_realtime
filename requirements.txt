@@ -1,31 +1,30 @@
-# Updated requirements.txt with latest compatible versions
-# Core web framework (updated to latest stable)
-fastapi==0.115.6
-uvicorn==0.32.1
-pydantic==2.10.4
+# Updated requirements.txt - versions managed by pip
+# Core web framework
+fastapi
+uvicorn
+pydantic
 
-# Database related (updated to latest stable)
-sqlalchemy==2.0.36
-psycopg2-binary==2.9.10
+# Database related
+sqlalchemy
+psycopg2-binary
 
-# HTTP client and utilities (updated)
-httpx==0.28.1
-python-multipart==0.0.17
-python-dotenv==1.0.1
+# HTTP client and utilities
+httpx
+python-multipart
+python-dotenv
 
-# LangChain related packages (upgraded to v0.3 - REQUIRES CODE REVIEW)
-# Note: This is a major version upgrade with potential breaking changes
-langchain==0.3.14
-langchain-core==0.3.28
-langchain-community==0.3.13
-langchain-openai==0.2.14
-langchain-experimental==0.3.7
+# LangChain related packages
+langchain
+langchain-core
+langchain-community
+langchain-openai
+langchain-experimental
 
-# OpenAI and related (updated to latest)
-openai==1.58.1
-tiktoken==0.8.0
+# OpenAI and related
+openai
+tiktoken
 
 # Additional recommended packages for production
-pydantic-settings==2.7.0  # Better environment variable handling
-structlog==24.5.0         # Better logging
-prometheus-client==0.21.1 # Metrics collection 
+pydantic-settings  # Better environment variable handling
+structlog         # Better logging
+prometheus-client # Metrics collection 

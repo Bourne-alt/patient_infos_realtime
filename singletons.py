@@ -11,11 +11,11 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import QueuePool
 from contextlib import contextmanager
 import threading
-
+from dotenv import load_dotenv
 from langchain_service import MedicalReportAnalyzer
 
 logger = logging.getLogger(__name__)
-
+load_dotenv()
 
 class DatabaseManager:
     """数据库连接管理器 - 单例模式"""
@@ -49,26 +49,28 @@ class DatabaseManager:
         self.engine = create_engine(
             self.database_url,
             echo=False,
-            # 连接池配置
+            # 连接池配置 - 优化性能
             poolclass=QueuePool,
-            pool_size=10,          # 连接池大小
-            max_overflow=20,       # 最大溢出连接数
-            pool_timeout=30,       # 获取连接超时时间
-            pool_recycle=3600,     # 连接回收时间（1小时）
+            pool_size=8,           # 减少基础连接池大小
+            max_overflow=15,       # 减少最大溢出连接数
+            pool_timeout=20,       # 减少获取连接超时时间
+            pool_recycle=1800,     # 30分钟回收连接（减少内存占用）
             pool_pre_ping=True,    # 连接前ping测试
-            # 性能优化配置
+            # PostgreSQL性能优化配置
             connect_args={
-                "options": "-c timezone=utc",
+                "options": "-c timezone=utc -c statement_timeout=30000",  # 30秒查询超时
                 "connect_timeout": 10,
                 "application_name": "medical_report_api"
+                # "server_side_binding": True  # 注释掉，psycopg2不支持此选项
             }
         )
         
-        # 创建会话工厂
+        # 创建会话工厂 - 性能优化
         self.SessionLocal = sessionmaker(
             autocommit=False,
             autoflush=False,
-            bind=self.engine
+            bind=self.engine,
+            expire_on_commit=False  # 避免提交后对象过期，提高性能
         )
         
         self._initialized = True

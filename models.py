@@ -98,6 +98,9 @@ class PatientInfo(Base):
     discharge_info = Column(Text, comment="出院信息")
     lis_result_detail = Column(Text, comment="检验结果详情")
     ai_report = Column(Text, comment="AI分析报告")
+    pathology_reports = Column(Text, comment="病理报告")
+    pacs_reports = Column(Text, comment="PACS检查报告")
+    microbiological_reports = Column(Text, comment="微生物报告")
     created_at = Column(DateTime, default=datetime.utcnow, comment="记录创建时间")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="记录更新时间")
 

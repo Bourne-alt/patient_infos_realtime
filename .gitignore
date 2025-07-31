@@ -1,0 +1,36 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.env
+# Virtual environments
+.venv
+logs/
+.python-version
+.uv.lock
+conversations/
+reports/
+logs/
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.development
+.env.test
+instantclient_19_26/
+META-INF/
+.DS_Store
+.idea/
+.vscode/
+.pytest_cache/
+.mypy_cache/
+venv/
+*.log
+test_api_commands.sh
+md/
+.env.example
+

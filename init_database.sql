@@ -23,6 +23,9 @@ CREATE TABLE IF NOT EXISTS patient_info (
     discharge_info TEXT COMMENT '出院信息',
     lis_result_detail TEXT COMMENT '检验结果详情',
     ai_report TEXT COMMENT 'AI分析报告',
+    pathology_reports TEXT COMMENT '病理报告',
+    pacs_reports TEXT COMMENT 'PACS检查报告',
+    microbiological_reports TEXT COMMENT '微生物报告',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '记录更新时间',
     UNIQUE(card_no, reg_date)

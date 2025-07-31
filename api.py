@@ -21,7 +21,7 @@ import asyncio
 import httpx
 from contextlib import asynccontextmanager
 import traceback
-
+from dotenv import load_dotenv
 # 导入数据库模型和Pydantic模型
 from models import Base, MedicalReport, ReportComparisonAnalysis, PatientInfo
 from schemas import (
@@ -34,6 +34,7 @@ from schemas import (
     ErrorResponse
 )
 
+load_dotenv(override=True)
 # 导入新的服务模块
 from database_service import DatabaseService
 from exceptions import (
@@ -48,6 +49,11 @@ from dependencies import (
     get_db, get_database_service, get_analyzer, get_services,
     get_health_check_db, validate_request_data, get_error_handler
 )
+# 导入优化后的报告处理服务和错误处理器
+from report_service import (
+    ReportProcessingService, ReportData, ReportType, report_service
+)
+from error_handlers import UnifiedErrorHandler, error_factory
 
 # 配置日志
 logging.basicConfig(
@@ -65,9 +71,11 @@ engine = get_database_engine()
 SessionLocal = database_manager.get_session_factory()
 
 # 大模型API配置
-LLM_API_URL = os.getenv("OPENAI_API_BASE", "http://localhost:11434/api/generate")
+LLM_API_URL = os.getenv("OPENAI_BASE_URL", "http://localhost:11434/api/generate")
 LLM_MODEL = os.getenv("OPENAI_MODEL", "llama3.1")
-LLM_API_KEY = os.getenv("OPENAI_API_KEY", "sk-proj-1234567890")
+# 使用统一的配置管理
+from config import settings
+LLM_API_KEY = settings.openai_api_key
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -251,6 +259,11 @@ async def health_check(db: Session = Depends(get_health_check_db)):
             "error": str(e),
             "timestamp": datetime.utcnow().isoformat()
         }
+
+# 导入LangChain相关模块
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage
+from langchain_core.prompts import ChatPromptTemplate
 
 # 大模型分析函数
 async def analyze_with_llm(report_type: str, report_data: Dict[str, Any], historical_report: Optional[Dict[str, Any]] = None) -> str:
@@ -439,41 +452,31 @@ async def analyze_with_llm(report_type: str, report_data: Dict[str, Any], histor
             
             请用中文回答，保持专业性和准确性。
             """
-        
-        # 调用大模型API
-        payload = {
-            "model": LLM_MODEL,
-            "prompt": prompt,
-            "stream": False,
-            "options": {
-                "temperature": 0.7,
-                "top_p": 0.9,
-                "max_tokens": 2000
-            }
-        }
-        
-        # 准备请求头，包含API key
-        headers = {
-            "Content-Type": "application/json"
-        }
-        
-        # 如果配置了API key，添加到请求头
-        if LLM_API_KEY and LLM_API_KEY != "sk-proj-1234567890":
-            headers["Authorization"] = f"Bearer {LLM_API_KEY}"
-            logger.debug("使用API key进行大模型调用")
-        
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(LLM_API_URL, json=payload, headers=headers)
+        # 使用LangChain调用大模型
+        try:
+            # 创建ChatOpenAI客户端
+            llm = ChatOpenAI(
+                model=LLM_MODEL,
+                temperature=0.7,
+                max_tokens=2000,
+                openai_api_key=LLM_API_KEY if LLM_API_KEY != "sk-proj-1234567890" else None,
+                base_url=LLM_API_URL
+            )
             
-            if response.status_code == 200:
-                result = response.json()
-                analysis = result.get("response", "无法获取分析结果")
-                analysis_type = "对比分析" if historical_report else "单独分析"
-                logger.info(f"LLM分析成功 - 报告类型: {report_type}, 分析类型: {analysis_type}")
-                return analysis
-            else:
-                logger.error(f"LLM API错误: {response.status_code} - {response.text}")
-                return "大模型分析暂时不可用，请稍后重试"
+            # 创建消息
+            message = HumanMessage(content=prompt)
+            
+            # 调用模型
+            response = await llm.ainvoke([message])
+            analysis = response.content
+            
+            analysis_type = "对比分析" if historical_report else "单独分析"
+            logger.info(f"LangChain分析成功 - 报告类型: {report_type}, 分析类型: {analysis_type}")
+            return analysis
+            
+        except Exception as llm_error:
+            logger.error(f"LangChain调用错误: {str(llm_error)}")
+            return f"大模型分析失败: {str(llm_error)}"
                 
     except asyncio.TimeoutError:
         logger.error("LLM分析超时")
@@ -483,14 +486,14 @@ async def analyze_with_llm(report_type: str, report_data: Dict[str, Any], histor
         return f"分析过程中发生错误，将使用基础分析"
 
 # 兼容性包装函数（保留原有API）
-def create_legacy_error_response(card_no: str, error_message: str) -> ErrorResponse:
+def create_legacy_error_response(card_no: str, error_message: str) -> Dict[str, Any]:
     """创建传统格式的错误响应（兼容性）"""
-    return ErrorResponse(
-        code="500",
-        cardNo=card_no,
-        error=error_message,
-        processed_at=datetime.utcnow().isoformat()
-    )
+    return {
+        "code": "500",
+        "cardNo": card_no,
+        "error": error_message,
+        "processed_at": datetime.utcnow().isoformat()
+    }
 
 # 新增：历史对比分析端点
 @app.post("/compare-reports", response_model=ReportComparisonResponse)
@@ -655,98 +658,32 @@ async def create_routine_lab_report(
     db: Session = Depends(get_db)
 ):
     """
-    注册常规检验报告信息
-    
-    Args:
-        request: 常规检验报告请求数据
-        background_tasks: 后台任务
-        db: 数据库会话
-        
-    Returns:
-        处理结果
+    注册常规检验报告信息 - 使用优化后的统一处理服务
     """
-    try:
-        # 验证和解析JSON数据
-        try:
-            result_list_data = json.loads(request.resultList)
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON解析错误: {e}")
-            return create_legacy_error_response(request.cardNo, "检查结果数据格式错误")
-        
-        # 准备报告数据用于AI分析
-        report_data = {
+    # 构建报告数据
+    report_data = ReportData(
+        card_no=request.cardNo,
+        report_date=request.reportDate,
+        report_type=ReportType.ROUTINE_LAB,
+        data={
             "cardNo": request.cardNo,
             "reportDate": request.reportDate,
-            "resultList": result_list_data
+            "resultList": request.resultList
         }
-        
-        # 创建数据库服务实例，查询最近的历史报告
-        db_service = DatabaseService(db)
-        
-        # 从patient_info表获取最新的lis_result_detail文本数据
-        latest_lis_result = db_service.get_latest_lis_result_detail(request.cardNo)
-        
-        latest_historical_report = None
-        if latest_lis_result and latest_lis_result.get('lis_result_detail'):
-            # 直接使用lis_result_detail文本内容作为历史数据
-            latest_historical_report = {
-                "card_no": latest_lis_result['card_no'],
-                "patient_name": latest_lis_result.get('patient_name'),
-                "report_date": str(latest_lis_result['reg_date']),
-                "lis_result_detail": latest_lis_result['lis_result_detail'],  # 直接使用文本内容
-                "source": "patient_info_table"
-            }
-            logger.info(f"找到patient_info表历史检验数据 - 患者: {request.cardNo}, 登记日期: {latest_lis_result['reg_date']}")
-        else:
-            logger.info(f"未找到patient_info表历史数据 - 患者: {request.cardNo}, 跳过历史对比")
-        
-        # 调用AI分析（异步），传入历史报告数据
-        ai_analysis = await analyze_with_llm("routineLab", report_data, latest_historical_report)
-        
-        # 创建数据库记录
-        db_report = MedicalReport(
-            card_no=request.cardNo,
-            report_type="routine_lab",
-            report_date=request.reportDate,
-            report_data=result_list_data,
-            ai_analysis=ai_analysis,
-            processed_at=datetime.utcnow()
-        )
-        
-        # 保存到数据库
-        db.add(db_report)
-        db.commit()
-        db.refresh(db_report)
-        
-        logger.info(f"常规检验报告保存成功 - 患者卡号: {request.cardNo}")
-        
-        # 返回成功响应
-        return RoutineLabReportResponse(
-            code="200",
-            cardNo=request.cardNo,
-            processed_at=datetime.utcnow().isoformat(),
-            ai_analysis=ai_analysis
-        )
-        
-    except SQLAlchemyError as e:
-        db.rollback()
-        db_error = handle_database_error("保存常规检验报告", request.cardNo, e)
-        error_dict = ErrorHandler.create_error_response(request.cardNo, db_error)
-        return RoutineLabReportResponse(
-            code=error_dict["code"],
-            cardNo=error_dict["cardNo"],
-            processed_at=error_dict["processed_at"],
-            ai_analysis=error_dict["error"]
-        )
-    except Exception as e:
-        db.rollback()
-        error_dict = ErrorHandler.create_error_response(request.cardNo, e, "处理常规检验报告失败")
-        return RoutineLabReportResponse(
-            code=error_dict["code"],
-            cardNo=error_dict["cardNo"],
-            processed_at=error_dict["processed_at"],
-            ai_analysis=error_dict["error"]
-        )
+    )
+    
+    # 使用统一的报告处理服务和错误处理
+    result = await report_service.process_report(
+        report_data, db, analyze_with_llm, 
+        lambda card_no, msg: error_factory.processing_error(card_no, msg, "常规检验报告处理")
+    )
+    
+    return RoutineLabReportResponse(
+        code=result["code"],
+        cardNo=result["cardNo"],
+        processed_at=result["processed_at"],
+        ai_analysis=result.get("ai_analysis", result.get("error", ""))
+    )
 
 @app.post("/microbiology", response_model=MicrobiologyReportResponse)
 async def create_microbiology_report(
@@ -755,116 +692,42 @@ async def create_microbiology_report(
     db: Session = Depends(get_db)
 ):
     """
-    注册微生物检验报告信息
-    
-    Args:
-        request: 微生物检验报告请求数据
-        background_tasks: 后台任务
-        db: 数据库会话
-        
-    Returns:
-        处理结果
+    注册微生物检验报告信息 - 使用优化后的统一处理服务
     """
-    try:
-        # 验证和解析JSON数据
-        try:
-            microbe_result_data = json.loads(request.microbeResultList)
-            bacterial_result_data = json.loads(request.bacterialResultList)
-            drug_sensitivity_data = json.loads(request.drugSensitivityList)
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON解析错误: {e}")
-            return create_error_response(request.cardNo, "微生物检验数据格式错误")
-        
-        # 准备报告数据用于AI分析
-        report_data = {
+    # 构建报告数据
+    report_data = ReportData(
+        card_no=request.cardNo,
+        report_date=request.reportDate,
+        report_type=ReportType.MICROBIOLOGY,
+        data={
             "cardNo": request.cardNo,
             "reportDate": request.reportDate,
-            "microbeResultList": microbe_result_data,
-            "bacterialResultList": bacterial_result_data,
-            "drugSensitivityList": drug_sensitivity_data,
-            "deptCode": request.deptCode,
-            "deptName": request.deptName,
-            "diagnosisCode": request.diagnosisCode,
-            "diagnosisName": request.diagnosisName,
+            "microbeResultList": request.microbeResultList,
+            "bacterialResultList": request.bacterialResultList,
+            "drugSensitivityList": request.drugSensitivityList,
             "diagnosisDate": request.diagnosisDate,
             "testResultCode": request.testResultCode,
             "testResultName": request.testResultName,
             "testQuantifyResult": request.testQuantifyResult,
             "testQuantifyResultUnit": request.testQuantifyResultUnit
-        }
-        
-        # 创建数据库服务实例，查询最近的历史报告
-        db_service = DatabaseService(db)
-        
-        # 从patient_info表获取最新的lis_result_detail文本数据
-        latest_lis_result = db_service.get_latest_lis_result_detail(request.cardNo)
-        
-        latest_historical_report = None
-        if latest_lis_result and latest_lis_result.get('lis_result_detail'):
-            # 直接使用lis_result_detail文本内容作为历史数据
-            latest_historical_report = {
-                "card_no": latest_lis_result['card_no'],
-                "patient_name": latest_lis_result.get('patient_name'),
-                "report_date": str(latest_lis_result['reg_date']),
-                "lis_result_detail": latest_lis_result['lis_result_detail'],  # 直接使用文本内容
-                "source": "patient_info_table"
-            }
-            logger.info(f"找到patient_info表历史检验数据 - 患者: {request.cardNo}, 登记日期: {latest_lis_result['reg_date']}")
-        else:
-            logger.info(f"未找到patient_info表历史数据 - 患者: {request.cardNo}, 跳过历史对比")
-        
-        # 调用AI分析（异步），传入历史报告数据
-        ai_analysis = await analyze_with_llm("microbiology", report_data, latest_historical_report)
-        
-        # 准备微生物报告数据
-        microbiology_data = {
-            "microbe_result_list": microbe_result_data,
-            "bacterial_result_list": bacterial_result_data,
-            "drug_sensitivity_list": drug_sensitivity_data,
-            "diagnosis_date": request.diagnosisDate,
-            "test_result_code": request.testResultCode,
-            "test_result_name": request.testResultName,
-            "test_quantify_result": request.testQuantifyResult,
-            "test_quantify_result_unit": request.testQuantifyResultUnit
-        }
-        
-        # 创建数据库记录
-        db_report = MedicalReport(
-            card_no=request.cardNo,
-            report_type="microbiology",
-            report_date=request.reportDate,
-            report_data=microbiology_data,
-            dept_code=request.deptCode,
-            dept_name=request.deptName,
-            diagnosis_code=request.diagnosisCode,
-            diagnosis_name=request.diagnosisName,
-            ai_analysis=ai_analysis,
-            processed_at=datetime.utcnow()
-        )
-        
-        # 保存到数据库
-        db.add(db_report)
-        db.commit()
-        db.refresh(db_report)
-        
-        logger.info(f"微生物检验报告保存成功 - 患者卡号: {request.cardNo}")
-        
-        # 返回成功响应
-        return MicrobiologyReportResponse(
-            code="200",
-            cardNo=request.cardNo,
-            processed_at=datetime.utcnow().isoformat(),
-            ai_analysis=ai_analysis
-        )
-        
-    except SQLAlchemyError as e:
-        logger.error(f"数据库错误: {e}")
-        db.rollback()
-        return create_error_response(request.cardNo, "数据库保存失败")
-    except Exception as e:
-        logger.error(f"处理微生物检验报告时发生错误: {e}")
-        db.rollback()
-        return create_error_response(request.cardNo, f"处理失败: {str(e)}")
+        },
+        dept_code=request.deptCode,
+        dept_name=request.deptName,
+        diagnosis_code=request.diagnosisCode,
+        diagnosis_name=request.diagnosisName
+    )
+    
+    # 使用统一的报告处理服务
+    result = await report_service.process_report(
+        report_data, db, analyze_with_llm, create_legacy_error_response
+    )
+    
+    return MicrobiologyReportResponse(
+        code=result["code"],
+        cardNo=result["cardNo"],
+        processed_at=result["processed_at"],
+        ai_analysis=result.get("ai_analysis", result.get("error", ""))
+    )
 
 @app.post("/examination", response_model=ExaminationReportResponse)
 async def create_examination_report(
@@ -873,21 +736,15 @@ async def create_examination_report(
     db: Session = Depends(get_db)
 ):
     """
-    注册检查报告信息
-    
-    Args:
-        request: 检查报告请求数据
-        background_tasks: 后台任务
-        db: 数据库会话
-        
-    Returns:
-        处理结果
+    注册检查报告信息 - 使用优化后的统一处理服务
     """
-    try:
-        # 准备报告数据用于AI分析
-        report_data = {
+    # 构建报告数据
+    report_data = ReportData(
+        card_no=request.cardNo,
+        report_date=request.reportDate,
+        report_type=ReportType.EXAMINATION,
+        data={
             "cardNo": request.cardNo,
-            "patientNo": request.patientNo,
             "reportDate": request.reportDate,
             "examResultCode": request.examResultCode,
             "examResultName": request.examResultName,
@@ -895,75 +752,21 @@ async def create_examination_report(
             "examQuantifyResultUnit": request.examQuantifyResultUnit,
             "examObservation": request.examObservation,
             "examResult": request.examResult
-        }
-        
-        # 创建数据库服务实例，查询最近的历史报告
-        db_service = DatabaseService(db)
-        
-        # 从patient_info表获取最新的lis_result_detail文本数据
-        latest_lis_result = db_service.get_latest_lis_result_detail(request.cardNo)
-        
-        latest_historical_report = None
-        if latest_lis_result and latest_lis_result.get('lis_result_detail'):
-            # 直接使用lis_result_detail文本内容作为历史数据
-            latest_historical_report = {
-                "card_no": latest_lis_result['card_no'],
-                "patient_name": latest_lis_result.get('patient_name'),
-                "report_date": str(latest_lis_result['reg_date']),
-                "lis_result_detail": latest_lis_result['lis_result_detail'],  # 直接使用文本内容
-                "source": "patient_info_table"
-            }
-            logger.info(f"找到patient_info表历史检验数据 - 患者: {request.cardNo}, 登记日期: {latest_lis_result['reg_date']}")
-        else:
-            logger.info(f"未找到patient_info表历史数据 - 患者: {request.cardNo}, 跳过历史对比")
-        
-        # 调用AI分析（异步），传入历史报告数据
-        ai_analysis = await analyze_with_llm("examination", report_data, latest_historical_report)
-        
-        # 准备检查报告数据
-        examination_data = {
-            "exam_result_code": request.examResultCode,
-            "exam_result_name": request.examResultName,
-            "exam_quantify_result": request.examQuantifyResult,
-            "exam_quantify_result_unit": request.examQuantifyResultUnit,
-            "exam_observation": request.examObservation,
-            "exam_result": request.examResult
-        }
-        
-        # 创建数据库记录
-        db_report = MedicalReport(
-            card_no=request.cardNo,
-            patient_no=request.patientNo,
-            report_type="examination",
-            report_date=request.reportDate,
-            report_data=examination_data,
-            ai_analysis=ai_analysis,
-            processed_at=datetime.utcnow()
-        )
-        
-        # 保存到数据库
-        db.add(db_report)
-        db.commit()
-        db.refresh(db_report)
-        
-        logger.info(f"检查报告保存成功 - 患者卡号: {request.cardNo}")
-        
-        # 返回成功响应
-        return ExaminationReportResponse(
-            code="200",
-            cardNo=request.cardNo,
-            processed_at=datetime.utcnow().isoformat(),
-            ai_analysis=ai_analysis
-        )
-        
-    except SQLAlchemyError as e:
-        logger.error(f"数据库错误: {e}")
-        db.rollback()
-        return create_error_response(request.cardNo, "数据库保存失败")
-    except Exception as e:
-        logger.error(f"处理检查报告时发生错误: {e}")
-        db.rollback()
-        return create_error_response(request.cardNo, f"处理失败: {str(e)}")
+        },
+        patient_no=request.patientNo
+    )
+    
+    # 使用统一的报告处理服务
+    result = await report_service.process_report(
+        report_data, db, analyze_with_llm, create_legacy_error_response
+    )
+    
+    return ExaminationReportResponse(
+        code=result["code"],
+        cardNo=result["cardNo"],
+        processed_at=result["processed_at"],
+        ai_analysis=result.get("ai_analysis", result.get("error", ""))
+    )
 
 @app.post("/pathology", response_model=PathologyReportResponse)
 async def create_pathology_report(
@@ -972,25 +775,16 @@ async def create_pathology_report(
     db: Session = Depends(get_db)
 ):
     """
-    注册病理报告信息
-    
-    Args:
-        request: 病理报告请求数据
-        background_tasks: 后台任务
-        db: 数据库会话
-        
-    Returns:
-        处理结果
+    注册病理报告信息 - 使用优化后的统一处理服务
     """
-    try:
-        # 准备报告数据用于AI分析
-        report_data = {
+    # 构建报告数据
+    report_data = ReportData(
+        card_no=request.cardNo,
+        report_date=request.reportDate,
+        report_type=ReportType.PATHOLOGY,
+        data={
             "cardNo": request.cardNo,
-            "patientNo": request.patientNo,
-            "deptCode": request.deptCode,
-            "deptName": request.deptName,
-            "diagnosisCode": request.diagnosisCode,
-            "diagnosisName": request.diagnosisName,
+            "reportDate": request.reportDate,
             "chiefComplaint": request.chiefComplaint,
             "symptomDescribe": request.symptomDescribe,
             "symptomStartTime": request.symptomStartTime,
@@ -1002,84 +796,25 @@ async def create_pathology_report(
             "diagnosisDescribe": request.diagnosisDescribe,
             "examObservation": request.examObservation,
             "examResult": request.examResult
-        }
-        
-        # 创建数据库服务实例，查询最近的历史报告
-        db_service = DatabaseService(db)
-        
-        # 从patient_info表获取最新的lis_result_detail文本数据
-        latest_lis_result = db_service.get_latest_lis_result_detail(request.cardNo)
-        
-        latest_historical_report = None
-        if latest_lis_result and latest_lis_result.get('lis_result_detail'):
-            # 直接使用lis_result_detail文本内容作为历史数据
-            latest_historical_report = {
-                "card_no": latest_lis_result['card_no'],
-                "patient_name": latest_lis_result.get('patient_name'),
-                "report_date": str(latest_lis_result['reg_date']),
-                "lis_result_detail": latest_lis_result['lis_result_detail'],  # 直接使用文本内容
-                "source": "patient_info_table"
-            }
-            logger.info(f"找到patient_info表历史检验数据 - 患者: {request.cardNo}, 登记日期: {latest_lis_result['reg_date']}")
-        else:
-            logger.info(f"未找到patient_info表历史数据 - 患者: {request.cardNo}, 跳过历史对比")
-        
-        # 调用AI分析（异步），传入历史报告数据
-        ai_analysis = await analyze_with_llm("pathology", report_data, latest_historical_report)
-        
-        # 准备病理报告数据
-        pathology_data = {
-            "chief_complaint": request.chiefComplaint,
-            "symptom_describe": request.symptomDescribe,
-            "symptom_start_time": request.symptomStartTime,
-            "symptom_end_time": request.symptomEndTime,
-            "exam_result_code": request.examResultCode,
-            "exam_result_name": request.examResultName,
-            "exam_quantify_result": request.examQuantifyResult,
-            "exam_quantify_result_unit": request.examQuantifyResultUnit,
-            "diagnosis_describe": request.diagnosisDescribe,
-            "exam_observation": request.examObservation,
-            "exam_result": request.examResult
-        }
-        
-        # 创建数据库记录
-        db_report = MedicalReport(
-            card_no=request.cardNo,
-            patient_no=request.patientNo,
-            report_type="pathology",
-            report_date=request.reportDate,
-            report_data=pathology_data,
-            dept_code=request.deptCode,
-            dept_name=request.deptName,
-            diagnosis_code=request.diagnosisCode,
-            diagnosis_name=request.diagnosisName,
-            ai_analysis=ai_analysis,
-            processed_at=datetime.utcnow()
-        )
-        
-        # 保存到数据库
-        db.add(db_report)
-        db.commit()
-        db.refresh(db_report)
-        
-        logger.info(f"病理报告保存成功 - 患者卡号: {request.cardNo}")
-        
-        # 返回成功响应
-        return PathologyReportResponse(
-            code="200",
-            cardNo=request.cardNo,
-            processed_at=datetime.utcnow().isoformat(),
-            ai_analysis=ai_analysis
-        )
-        
-    except SQLAlchemyError as e:
-        logger.error(f"数据库错误: {e}")
-        db.rollback()
-        return create_error_response(request.cardNo, "数据库保存失败")
-    except Exception as e:
-        logger.error(f"处理病理报告时发生错误: {e}")
-        db.rollback()
-        return create_error_response(request.cardNo, f"处理失败: {str(e)}")
+        },
+        patient_no=request.patientNo,
+        dept_code=request.deptCode,
+        dept_name=request.deptName,
+        diagnosis_code=request.diagnosisCode,
+        diagnosis_name=request.diagnosisName
+    )
+    
+    # 使用统一的报告处理服务
+    result = await report_service.process_report(
+        report_data, db, analyze_with_llm, create_legacy_error_response
+    )
+    
+    return PathologyReportResponse(
+        code=result["code"],
+        cardNo=result["cardNo"],
+        processed_at=result["processed_at"],
+        ai_analysis=result.get("ai_analysis", result.get("error", ""))
+    )
 
 if __name__ == "__main__":
     import uvicorn

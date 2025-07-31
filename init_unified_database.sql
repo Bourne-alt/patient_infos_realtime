@@ -73,6 +73,9 @@ CREATE TABLE IF NOT EXISTS patient_info (
     discharge_info TEXT,
     lis_result_detail TEXT,
     ai_report TEXT,
+    pathology_reports TEXT,
+    pacs_reports TEXT,
+    microbiological_reports TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(card_no, reg_date)
@@ -82,6 +85,9 @@ CREATE TABLE IF NOT EXISTS patient_info (
 COMMENT ON TABLE patient_info IS '患者信息表';
 COMMENT ON COLUMN patient_info.card_no IS '患者卡号';
 COMMENT ON COLUMN patient_info.lis_result_detail IS '检验结果详情';
+COMMENT ON COLUMN patient_info.pathology_reports IS '病理报告';
+COMMENT ON COLUMN patient_info.pacs_reports IS 'PACS检查报告';
+COMMENT ON COLUMN patient_info.microbiological_reports IS '微生物报告';
 
 -- 创建patient_info表的索引
 CREATE INDEX IF NOT EXISTS idx_patient_info_card_no ON patient_info(card_no);
@@ -172,7 +178,7 @@ INSERT INTO patient_info (
 ) ON CONFLICT (card_no, reg_date) DO NOTHING;
 
 -- 插入示例医疗报告数据
-INSERT INTO medical_reports (
+INSERT INTO medical_reports_rt_yl (
     card_no, report_type, report_date, report_data, ai_analysis
 ) VALUES (
     '7000217139', 'routine_lab', '2025-04-20', 
@@ -181,13 +187,13 @@ INSERT INTO medical_reports (
 ) ON CONFLICT DO NOTHING;
 
 -- 显示表结构
-\d medical_reports;
+\d medical_reports_rt_yl;
 \d patient_info;
 \d report_comparison_analysis;
 
 -- 显示插入的数据
 SELECT 'medical_reports表数据:' as info;
-SELECT * FROM medical_reports;
+SELECT * FROM medical_reports_rt_yl ;
 
 SELECT 'patient_info表数据:' as info;
 SELECT * FROM patient_info;
