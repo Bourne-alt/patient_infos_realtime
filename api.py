@@ -660,6 +660,8 @@ async def create_routine_lab_report(
     """
     注册常规检验报告信息 - 使用优化后的统一处理服务
     """
+    # 打印request
+    logger.info(f"request: {request}")
     # 构建报告数据
     report_data = ReportData(
         card_no=request.cardNo,
@@ -671,7 +673,8 @@ async def create_routine_lab_report(
             "resultList": request.resultList
         }
     )
-    
+    # 打印report_data
+    logger.info(f"report_data: {report_data}")
     # 使用统一的报告处理服务和错误处理
     result = await report_service.process_report(
         report_data, db, analyze_with_llm, 
@@ -694,6 +697,8 @@ async def create_microbiology_report(
     """
     注册微生物检验报告信息 - 使用优化后的统一处理服务
     """
+    # 打印request
+    logger.info(f"request: {request}")
     # 构建报告数据
     report_data = ReportData(
         card_no=request.cardNo,
@@ -716,7 +721,8 @@ async def create_microbiology_report(
         diagnosis_code=request.diagnosisCode,
         diagnosis_name=request.diagnosisName
     )
-    
+    # 打印report_data
+    logger.info(f"report_data: {report_data}")
     # 使用统一的报告处理服务
     result = await report_service.process_report(
         report_data, db, analyze_with_llm, create_legacy_error_response
@@ -738,6 +744,8 @@ async def create_examination_report(
     """
     注册检查报告信息 - 使用优化后的统一处理服务
     """
+    # 打印request
+    logger.info(f"request: {request}")
     # 构建报告数据
     report_data = ReportData(
         card_no=request.cardNo,
@@ -755,7 +763,8 @@ async def create_examination_report(
         },
         patient_no=request.patientNo
     )
-    
+    # 打印report_data
+    logger.info(f"report_data: {report_data}")
     # 使用统一的报告处理服务
     result = await report_service.process_report(
         report_data, db, analyze_with_llm, create_legacy_error_response
@@ -777,6 +786,8 @@ async def create_pathology_report(
     """
     注册病理报告信息 - 使用优化后的统一处理服务
     """
+    # 打印request
+    logger.info(f"request: {request}")
     # 构建报告数据
     report_data = ReportData(
         card_no=request.cardNo,
@@ -803,7 +814,8 @@ async def create_pathology_report(
         diagnosis_code=request.diagnosisCode,
         diagnosis_name=request.diagnosisName
     )
-    
+    # 打印report_data
+    logger.info(f"report_data: {report_data}")
     # 使用统一的报告处理服务
     result = await report_service.process_report(
         report_data, db, analyze_with_llm, create_legacy_error_response

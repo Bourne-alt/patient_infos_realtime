@@ -70,6 +70,7 @@ class PathologyReportRequest(BaseModel):
     """病理报告请求模型"""
     cardNo: str = Field(..., description="患者卡号")
     patientNo: str = Field(..., description="住院号")
+    reportDate: str = Field(..., description="报告日期")
     deptCode: str = Field(..., description="患者科室编码")
     deptName: str = Field(..., description="患者科室名称")
     diagnosisCode: str = Field(..., description="诊断代码")
