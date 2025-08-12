@@ -157,20 +157,13 @@ class ReportProcessingService:
                 if field not in report_data.data:
                     return False, f"缺少必需字段: {field}"
             
-            # 验证JSON字段
+            # 现在resultList是对象数组，不需要JSON解析验证
             if report_data.report_type == ReportType.ROUTINE_LAB:
-                try:
-                    json.loads(report_data.data["resultList"])
-                except json.JSONDecodeError:
-                    return False, "resultList字段JSON格式错误"
+                pass
             
             elif report_data.report_type == ReportType.MICROBIOLOGY:
-                json_fields = ["microbeResultList", "bacterialResultList", "drugSensitivityList"]
-                for field in json_fields:
-                    try:
-                        json.loads(report_data.data[field])
-                    except json.JSONDecodeError:
-                        return False, f"{field}字段JSON格式错误"
+                # 现在这些字段是对象数组，不需要JSON解析验证
+                pass
             
             return True, None
             
@@ -186,13 +179,13 @@ class ReportProcessingService:
         }
         
         if report_data.report_type == ReportType.ROUTINE_LAB:
-            analysis_data["resultList"] = json.loads(report_data.data["resultList"])
+            analysis_data["resultList"] = report_data.data["resultList"]
         
         elif report_data.report_type == ReportType.MICROBIOLOGY:
             analysis_data.update({
-                "microbeResultList": json.loads(report_data.data["microbeResultList"]),
-                "bacterialResultList": json.loads(report_data.data["bacterialResultList"]),
-                "drugSensitivityList": json.loads(report_data.data["drugSensitivityList"]),
+                "microbeResultList": report_data.data["microbeResultList"],
+                "bacterialResultList": report_data.data["bacterialResultList"],
+                "drugSensitivityList": report_data.data["drugSensitivityList"],
                 "deptCode": report_data.dept_code,
                 "deptName": report_data.dept_name,
                 "diagnosisCode": report_data.diagnosis_code,
@@ -228,13 +221,13 @@ class ReportProcessingService:
     def prepare_database_data(self, report_data: ReportData) -> Dict[str, Any]:
         """准备用于数据库存储的数据"""
         if report_data.report_type == ReportType.ROUTINE_LAB:
-            return json.loads(report_data.data["resultList"])
+            return report_data.data["resultList"]
         
         elif report_data.report_type == ReportType.MICROBIOLOGY:
             return {
-                "microbe_result_list": json.loads(report_data.data["microbeResultList"]),
-                "bacterial_result_list": json.loads(report_data.data["bacterialResultList"]),
-                "drug_sensitivity_list": json.loads(report_data.data["drugSensitivityList"]),
+                "microbe_result_list": report_data.data["microbeResultList"],
+                "bacterial_result_list": report_data.data["bacterialResultList"],
+                "drug_sensitivity_list": report_data.data["drugSensitivityList"],
                 "diagnosis_date": report_data.data.get("diagnosisDate"),
                 "test_result_code": report_data.data.get("testResultCode"),
                 "test_result_name": report_data.data.get("testResultName"),

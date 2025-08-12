@@ -3,9 +3,92 @@ Pydantic模型定义
 定义API请求和响应的数据结构
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+import json
+
+# 常规检验相关的详细模型
+class RoutineInspectionResultDetail(BaseModel):
+    """常规检验结果详细信息"""
+    cutOffValue: str = Field("", description="截止值")
+    detailItemCode: str = Field("", description="明细项目编码")
+    detailItemEnName: str = Field("", description="明细项目英文名")
+    detailItemName: str = Field("", description="明细项目名称")
+    highValue: str = Field("", description="高值")
+    itemMethod: str = Field("", description="检测方法")
+    lowValue: str = Field("", description="低值")
+    odValue: str = Field("", description="OD值")
+    printOrder: str = Field("", description="打印顺序")
+    resultContext: str = Field("", description="结果说明")
+    resultNatureCode: str = Field("", description="结果性质编码")
+    resultNatureName: str = Field("", description="结果性质名称")
+    resultValue: str = Field("", description="结果值")
+    reviewFlag: str = Field("", description="审核标志")
+    scoValue: str = Field("", description="SCO值")
+    testResultCode: str = Field("", description="检验结果编码")
+    testResultName: str = Field("", description="检验结果名称")
+    unit: str = Field("", description="单位")
+
+class RoutineLabResult(BaseModel):
+    """常规检验结果"""
+    itemCode: str = Field("", description="项目编码")
+    itemEname: str = Field("", description="项目英文名")
+    itemName: str = Field("", description="项目名称")
+    resultTime: str = Field("", description="结果时间")
+    routineInspectionResultDetailList: List[RoutineInspectionResultDetail] = Field(
+        default_factory=list, 
+        description="常规检验结果详细信息列表"
+    )
+
+# 微生物检验相关的详细模型
+class MicrobeDetail(BaseModel):
+    """微生物检测详细信息"""
+    detailItemCode: str = Field("", description="明细项目编码")
+    detailItemName: str = Field("", description="明细项目名称")
+    printOrder: str = Field("", description="打印顺序")
+    resultValue: str = Field("", description="结果值")
+
+class MicrobeResult(BaseModel):
+    """微生物检测结果"""
+    microbeDetailList: List[MicrobeDetail] = Field(default_factory=list, description="微生物详细信息列表")
+    orderItemCode: str = Field("", description="医嘱项目编码")
+    orderItemName: str = Field("", description="医嘱项目名称")
+    reportResult: str = Field("", description="报告结果")
+    resultTime: str = Field("", description="结果时间")
+
+class BacterialResult(BaseModel):
+    """细菌鉴定结果"""
+    bacteriaCount: str = Field("", description="细菌计数")
+    bacterialItemCode: str = Field("", description="细菌项目编码")
+    bacterialItemName: str = Field("", description="细菌项目名称")
+    colonyCounTunitname: str = Field("", description="菌落计数单位名称")
+    colonyCountUnitcode: str = Field("", description="菌落计数单位编码")
+    comment: str = Field("", description="备注")
+    deviceCode: str = Field("", description="设备编码")
+    deviceName: str = Field("", description="设备名称")
+    growth: str = Field("", description="生长情况")
+    methodCode: str = Field("", description="方法编码")
+    methodName: str = Field("", description="方法名称")
+
+class DrugSensitivity(BaseModel):
+    """药敏结果"""
+    antibioticsCode: str = Field("", description="抗生素编码")
+    antibioticsName: str = Field("", description="抗生素名称")
+    bacterialItemCode: str = Field("", description="细菌项目编码")
+    bacterialItemName: str = Field("", description="细菌项目名称")
+    deviceCode: str = Field("", description="设备编码")
+    deviceName: str = Field("", description="设备名称")
+    drugSensitiveFoldPointI: str = Field("", description="药敏折点I")
+    drugSensitiveFoldPointR: str = Field("", description="药敏折点R")
+    drugSensitiveFoldPointS: str = Field("", description="药敏折点S")
+    inspectionResultUnitCode: str = Field("", description="检验结果单位编码")
+    inspectionResultUnitName: str = Field("", description="检验结果单位名称")
+    interpretationCode: str = Field("", description="解释编码")
+    interpretationName: str = Field("", description="解释名称")
+    methodCode: str = Field("", description="方法编码")
+    methodName: str = Field("", description="方法名称")
+    quantitative: str = Field("", description="定量结果")
 
 # 基础响应模型
 class BaseResponse(BaseModel):
@@ -18,9 +101,22 @@ class BaseResponse(BaseModel):
 # 常规检验报告模型
 class RoutineLabReportRequest(BaseModel):
     """常规检验报告请求模型"""
-    cardNo: str = Field(..., description="患者卡号")
-    reportDate: str = Field(..., description="报告日期")
-    resultList: str = Field(..., description="检查结果JSON字符串")
+    cardNo: str = Field(..., min_length=1, description="患者卡号，不能为空")
+    reportDate: Optional[str] = Field(None, description="报告日期，格式：YYYYMMDDHHMMSS")
+    resultList: List[RoutineLabResult] = Field(default_factory=list, description="检查结果列表")
+    
+    @validator('cardNo')
+    def validate_card_no(cls, v):
+        if not v or v.strip() == "":
+            raise ValueError('患者卡号不能为空')
+        return v.strip()
+    
+    @validator('reportDate')
+    def validate_report_date(cls, v):
+        if not v or len(v) != 14 or not v.isdigit():
+            raise ValueError('报告日期格式错误，应为14位数字：YYYYMMDDHHMMSS')
+        return v
+    
 
 class RoutineLabReportResponse(BaseResponse):
     """常规检验报告响应模型"""
@@ -30,19 +126,19 @@ class RoutineLabReportResponse(BaseResponse):
 class MicrobiologyReportRequest(BaseModel):
     """微生物检验报告请求模型"""
     cardNo: str = Field(..., description="患者卡号")
-    reportDate: str = Field(..., description="报告日期")
-    microbeResultList: str = Field(..., description="微生物报告列表JSON字符串")
-    bacterialResultList: str = Field(..., description="细菌鉴定结果列表JSON字符串")
-    drugSensitivityList: str = Field(..., description="药敏结果列表JSON字符串")
-    deptCode: str = Field(..., description="科室编码")
-    deptName: str = Field(..., description="科室名称")
-    diagnosisCode: str = Field(..., description="诊断编码")
-    diagnosisName: str = Field(..., description="诊断名称")
-    diagnosisDate: str = Field(..., description="诊断日期")
-    testResultCode: str = Field(..., description="检验结果编码")
-    testResultName: str = Field(..., description="检验结果名称")
-    testQuantifyResult: str = Field(..., description="检验定量结果")
-    testQuantifyResultUnit: str = Field(..., description="检验定量结果单位")
+    reportDate: Optional[str] = Field(None, description="报告日期")
+    microbeResultList: List[MicrobeResult] = Field(default_factory=list, description="微生物报告列表")
+    bacterialResultList: List[BacterialResult] = Field(default_factory=list, description="细菌鉴定结果列表")
+    drugSensitivityList: List[DrugSensitivity] = Field(default_factory=list, description="药敏结果列表")
+    deptCode: Optional[str] = Field(None, description="科室编码")
+    deptName: Optional[str] = Field(None, description="科室名称")
+    diagnosisCode: Optional[str] = Field(None, description="诊断编码")
+    diagnosisName: Optional[str] = Field(None, description="诊断名称")
+    diagnosisDate: Optional[str] = Field(None, description="诊断日期")
+    testResultCode: Optional[str] = Field(None, description="检验结果编码")
+    testResultName: Optional[str] = Field(None, description="检验结果名称")
+    testQuantifyResult: Optional[str] = Field(None, description="检验定量结果")
+    testQuantifyResultUnit: Optional[str] = Field(None, description="检验定量结果单位")
 
 class MicrobiologyReportResponse(BaseResponse):
     """微生物检验报告响应模型"""
@@ -52,14 +148,14 @@ class MicrobiologyReportResponse(BaseResponse):
 class ExaminationReportRequest(BaseModel):
     """检查报告请求模型"""
     cardNo: str = Field(..., description="患者卡号")
-    patientNo: str = Field(..., description="住院号")
-    reportDate: str = Field(..., description="报告生成时间")
-    examResultCode: str = Field(..., description="检查结果代码")
-    examResultName: str = Field(..., description="检查结果名称")
-    examQuantifyResult: str = Field(..., description="检查定量结果")
-    examQuantifyResultUnit: str = Field(..., description="检查定量结果单位")
-    examObservation: str = Field(..., description="检查报告结果-客观所见")
-    examResult: str = Field(..., description="检查报告结果-主观提示")
+    patientNo: Optional[str] = Field(None, description="住院号")
+    reportDate: Optional[str] = Field(None, description="报告生成时间")
+    examResultCode: Optional[str] = Field(None, description="检查结果代码")
+    examResultName: Optional[str] = Field(None, description="检查结果名称")
+    examQuantifyResult: Optional[str] = Field(None, description="检查定量结果")
+    examQuantifyResultUnit: Optional[str] = Field(None, description="检查定量结果单位")
+    examObservation: Optional[str] = Field(None, description="检查报告结果-客观所见")
+    examResult: Optional[str] = Field(None, description="检查报告结果-主观提示")
 
 class ExaminationReportResponse(BaseResponse):
     """检查报告响应模型"""
@@ -69,23 +165,23 @@ class ExaminationReportResponse(BaseResponse):
 class PathologyReportRequest(BaseModel):
     """病理报告请求模型"""
     cardNo: str = Field(..., description="患者卡号")
-    patientNo: str = Field(..., description="住院号")
-    reportDate: str = Field(..., description="报告日期")
-    deptCode: str = Field(..., description="患者科室编码")
-    deptName: str = Field(..., description="患者科室名称")
-    diagnosisCode: str = Field(..., description="诊断代码")
-    diagnosisName: str = Field(..., description="诊断名称")
-    chiefComplaint: str = Field(..., description="主诉")
-    symptomDescribe: str = Field(..., description="症状描述")
-    symptomStartTime: str = Field(..., description="症状开始时间")
-    symptomEndTime: str = Field(..., description="症状停止时间")
-    examResultCode: str = Field(..., description="检查结果代码")
-    examResultName: str = Field(..., description="检查结果名称")
-    examQuantifyResult: str = Field(..., description="检查定量结果")
-    examQuantifyResultUnit: str = Field(..., description="检查定量结果单位")
-    diagnosisDescribe: str = Field(..., description="诊疗过程描述")
-    examObservation: str = Field(..., description="检查报告结果-客观所见")
-    examResult: str = Field(..., description="检查报告结果-主观提示")
+    patientNo: Optional[str] = Field(None, description="住院号")
+    reportDate: Optional[str] = Field(None, description="报告日期")
+    deptCode: Optional[str] = Field(None, description="患者科室编码")
+    deptName: Optional[str] = Field(None, description="患者科室名称")
+    diagnosisCode: Optional[str] = Field(None, description="诊断代码")
+    diagnosisName: Optional[str] = Field(None, description="诊断名称")
+    chiefComplaint: Optional[str] = Field(None, description="主诉")
+    symptomDescribe: Optional[str] = Field(None, description="症状描述")
+    symptomStartTime: Optional[str] = Field(None, description="症状开始时间")
+    symptomEndTime: Optional[str] = Field(None, description="症状停止时间")
+    examResultCode: Optional[str] = Field(None, description="检查结果代码")
+    examResultName: Optional[str] = Field(None, description="检查结果名称")
+    examQuantifyResult: Optional[str] = Field(None, description="检查定量结果")
+    examQuantifyResultUnit: Optional[str] = Field(None, description="检查定量结果单位")
+    diagnosisDescribe: Optional[str] = Field(None, description="诊疗过程描述")
+    examObservation: Optional[str] = Field(None, description="检查报告结果-客观所见")
+    examResult: Optional[str] = Field(None, description="检查报告结果-主观提示")
 
 class PathologyReportResponse(BaseResponse):
     """病理报告响应模型"""

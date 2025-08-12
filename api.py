@@ -5,6 +5,7 @@
 """
 
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -100,6 +101,34 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan
 )
+
+# 请求验证错误处理器
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """处理请求验证错误（422错误）"""
+    errors = []
+    for error in exc.errors():
+        field_path = " -> ".join(str(loc) for loc in error["loc"])
+        errors.append({
+            "field": field_path,
+            "message": error["msg"],
+            "type": error["type"],
+            "input": error.get("input")
+        })
+    
+    logger.error(f"请求验证失败 - URL: {request.url}")
+    logger.error(f"验证错误详情: {errors}")
+    
+    return JSONResponse(
+        status_code=422,
+        content={
+            "code": "422",
+            "error": "请求数据验证失败",
+            "message": "请检查请求参数格式",
+            "details": errors,
+            "processed_at": datetime.utcnow().isoformat()
+        }
+    )
 
 # 全局异常处理器
 @app.exception_handler(Exception)
@@ -279,178 +308,92 @@ async def analyze_with_llm(report_type: str, report_data: Dict[str, Any], histor
         分析结果
     """
     try:
-        # 构建不同类型报告的专业分析提示
+        # 构建报告分析提示
+        analysis_context = "对比分析" if historical_report else "首次分析"
+        
         if report_type == "routineLab":
-            if historical_report:
-                # 有历史报告时进行对比分析
-                prompt = f"""
-                请作为专业的临床检验医学专家，对比分析以下常规检验报告：
-                
-                【当前报告】：
-                {json.dumps(report_data, ensure_ascii=False, indent=2)}
-                
-                【历史报告】（最近一次）：
-                {json.dumps(historical_report, ensure_ascii=False, indent=2)}
-                
-                请从以下几个方面进行详细的对比分析：
-                1. 当前报告各项检验指标的参考值范围和实际值对比
-                2. 与历史报告相比，各项指标的变化趋势（上升、下降、稳定）
-                3. 异常指标的临床意义和可能的病理状态变化
-                4. 检验结果的整体评估和疾病风险评估
-                5. 基于变化趋势的健康状况分析
-                6. 建议的进一步检查、治疗措施或生活方式调整
-                7. 针对变化趋势的用药建议和随访建议
-                
-                请特别关注：
-                - 哪些指标有显著变化
-                - 变化的幅度和临床意义
-                - 是否存在好转或恶化的趋势
-                - 需要重点关注的风险指标
-                
-                请用专业但通俗易懂的中文回答，突出对比分析的结果。
-                """
-            else:
-                # 无历史报告时进行单独分析
-                prompt = f"""
-                请作为专业的临床检验医学专家，分析以下常规检验报告：
-                
-                报告数据：{json.dumps(report_data, ensure_ascii=False, indent=2)}
-                
-                请从以下几个方面进行详细分析：
-                1. 各项检验指标的参考值范围和实际值对比
-                2. 异常指标的临床意义和可能的病理状态
-                3. 检验结果的整体评估和疾病风险
-                4. 建议的进一步检查或治疗措施
-                5. 患者生活方式和用药建议
-                
-                注意：这是该患者的首次检验报告，暂无历史数据可供对比。
-                
-                请用专业但通俗易懂的中文回答。
-                """
-        elif report_type == "microbiology":
-            if historical_report:
-                # 有历史报告时进行对比分析
-                prompt = f"""
-                请作为专业的微生物学和感染科专家，对比分析以下微生物检验报告：
-                
-                【当前报告】：
-                {json.dumps(report_data, ensure_ascii=False, indent=2)}
-                
-                【历史报告】（最近一次）：
-                {json.dumps(historical_report, ensure_ascii=False, indent=2)}
-                
-                请从以下几个方面进行详细的对比分析：
-                1. 微生物培养结果的变化和临床意义
-                2. 病原菌种类、数量的变化趋势
-                3. 药敏试验结果的变化和耐药性分析
-                4. 感染控制效果评估
-                5. 治疗方案的有效性评估
-                6. 后续治疗建议和预防措施
-                
-                请特别关注感染是否得到控制、耐药性变化等关键信息。
-                
-                请用专业但通俗易懂的中文回答。
-                """
-            else:
-                prompt = f"""
-                请作为专业的微生物学和感染科专家，分析以下微生物检验报告：
-                
-                报告数据：{json.dumps(report_data, ensure_ascii=False, indent=2)}
-                
-                请从以下几个方面进行详细分析：
-                1. 微生物培养结果的临床意义
-                2. 病原菌的致病性和传播途径
-                3. 药敏试验结果的解读和抗菌药物选择
-                4. 感染控制措施和预防建议
-                5. 治疗方案的制定和疗程建议
-                
-                请用专业但通俗易懂的中文回答。
-                """
-        elif report_type == "examination":
-            if historical_report:
-                # 有历史报告时进行对比分析
-                prompt = f"""
-                请作为专业的影像学和临床医学专家，对比分析以下检查报告：
-                
-                【当前报告】：
-                {json.dumps(report_data, ensure_ascii=False, indent=2)}
-                
-                【历史报告】（最近一次）：
-                {json.dumps(historical_report, ensure_ascii=False, indent=2)}
-                
-                请从以下几个方面进行详细的对比分析：
-                1. 客观所见的变化对比
-                2. 主观提示的变化分析
-                3. 病变进展、稳定或好转的评估
-                4. 治疗效果的评估
-                5. 后续诊疗建议
-                
-                请用专业但通俗易懂的中文回答。
-                """
-            else:
-                prompt = f"""
-                请作为专业的影像学和临床医学专家，分析以下检查报告：
-                
-                报告数据：{json.dumps(report_data, ensure_ascii=False, indent=2)}
-                
-                请从以下几个方面进行详细分析：
-                1. 客观所见的详细解读
-                2. 主观提示的临床意义
-                3. 检查结果与临床症状的关联性
-                4. 可能的诊断和鉴别诊断
-                5. 建议的后续检查或治疗方案
-                
-                请用专业但通俗易懂的中文回答。
-                """
-        elif report_type == "pathology":
-            if historical_report:
-                # 有历史报告时进行对比分析
-                prompt = f"""
-                请作为专业的病理学专家，对比分析以下病理报告：
-                
-                【当前报告】：
-                {json.dumps(report_data, ensure_ascii=False, indent=2)}
-                
-                【历史报告】（最近一次）：
-                {json.dumps(historical_report, ensure_ascii=False, indent=2)}
-                
-                请从以下几个方面进行详细的对比分析：
-                1. 病理形态学特征的变化
-                2. 诊断结果的变化和临床意义
-                3. 疾病进展、稳定或好转的评估
-                4. 治疗效果的病理学评估
-                5. 预后评估和后续治疗建议
-                
-                请用专业但通俗易懂的中文回答。
-                """
-            else:
-                prompt = f"""
-                请作为专业的病理学专家，分析以下病理报告：
-                
-                报告数据：{json.dumps(report_data, ensure_ascii=False, indent=2)}
-                
-                请从以下几个方面进行详细分析：
-                1. 病理形态学特征的详细解读
-                2. 诊断结果的临床意义和严重程度
-                3. 疾病的发生发展机制
-                4. 预后评估和危险因素分析
-                5. 治疗方案建议和随访计划
-                
-                请用专业但通俗易懂的中文回答。
-                """
-        else:
+            data_section = f"""当前报告：{json.dumps(report_data, ensure_ascii=False, indent=2)}
+{f'历史报告：{json.dumps(historical_report, ensure_ascii=False, indent=2)}' if historical_report else ''}"""            
+            
             prompt = f"""
-            请作为专业的医疗AI助手，分析以下{report_type}：
+作为检验医学专家，{analysis_context}以下常规检验报告：
+
+{data_section}
+
+分析要点：
+1. 异常指标识别及临床意义{"和变化趋势" if historical_report else ""}
+2. 疾病风险评估{"和进展评价" if historical_report else ""}
+3. 诊疗建议和生活指导
+
+{"重点关注指标变化幅度、好转恶化趋势。" if historical_report else "注：首次报告，无对比数据。"}
+
+请用中文专业但通俗地回答。
+            """
+        elif report_type == "microbiology":
+            data_section = f"""当前报告：{json.dumps(report_data, ensure_ascii=False, indent=2)}
+{f'历史报告：{json.dumps(historical_report, ensure_ascii=False, indent=2)}' if historical_report else ''}"""            
             
-            报告数据：{json.dumps(report_data, ensure_ascii=False, indent=2)}
+            prompt = f"""
+作为微生物感染科专家，{analysis_context}以下微生物检验报告：
+
+{data_section}
+
+分析要点：
+1. 病原菌识别及致病性评估{"及变化趋势" if historical_report else ""}
+2. 药敏结果及耐药性分析{"及变化" if historical_report else ""}
+3. 感染控制{"效果评估和" if historical_report else ""}治疗建议
+
+{"重点关注耐药性变化和治疗效果。" if historical_report else "注：首次检验，重点关注药敏结果。"}
+
+请用中文专业但通俗地回答。
+            """
+        elif report_type == "examination":
+            data_section = f"""当前报告：{json.dumps(report_data, ensure_ascii=False, indent=2)}
+{f'历史报告：{json.dumps(historical_report, ensure_ascii=False, indent=2)}' if historical_report else ''}"""            
             
-            请提供详细的分析，包括：
-            1. 关键指标解读
-            2. 异常值识别
-            3. 临床意义
-            4. 建议的后续处理
+            prompt = f"""
+作为影像学专家，{analysis_context}以下检查报告：
+
+{data_section}
+
+分析要点：
+1. 客观所见解读{"及变化对比" if historical_report else ""}
+2. 主观提示的临床意义{"及变化" if historical_report else ""}
+3. 诊断{"及进展" if historical_report else "和鉴别诊断"}建议
+
+请用中文专业但通俗地回答。
+            """
+        elif report_type == "pathology":
+            data_section = f"""当前报告：{json.dumps(report_data, ensure_ascii=False, indent=2)}
+{f'历史报告：{json.dumps(historical_report, ensure_ascii=False, indent=2)}' if historical_report else ''}"""            
             
-            请用中文回答，保持专业性和准确性。
+            prompt = f"""
+作为病理学专家，{analysis_context}以下病理报告：
+
+{data_section}
+
+分析要点：
+1. 病理形态学特征{"及变化" if historical_report else ""}解读
+2. 诊断及临床意义{"、进展评估" if historical_report else ""}
+3. 预后评估和治疗建议
+
+请用中文专业但通俗地回答。
+            """
+        else:
+            data_section = f"""当前报告：{json.dumps(report_data, ensure_ascii=False, indent=2)}
+{f'历史报告：{json.dumps(historical_report, ensure_ascii=False, indent=2)}' if historical_report else ''}"""            
+            
+            prompt = f"""
+作为医疗AI专家，{analysis_context}以下{report_type}报告：
+
+{data_section}
+
+分析要点：
+1. 关键指标解读和异常识别
+2. 临床意义分析
+3. 后续处理建议
+
+请用中文专业但通俗地回答。
             """
         # 使用LangChain调用大模型
         try:
@@ -662,14 +605,18 @@ async def create_routine_lab_report(
     """
     # 打印request
     logger.info(f"request: {request}")
+    
+    # 处理reportDate为None的情况，使用当前时间
+    report_date = request.reportDate or datetime.now().strftime("%Y%m%d%H%M%S")
+    
     # 构建报告数据
     report_data = ReportData(
         card_no=request.cardNo,
-        report_date=request.reportDate,
+        report_date=report_date,
         report_type=ReportType.ROUTINE_LAB,
         data={
             "cardNo": request.cardNo,
-            "reportDate": request.reportDate,
+            "reportDate": report_date,
             "resultList": request.resultList
         }
     )
@@ -699,27 +646,31 @@ async def create_microbiology_report(
     """
     # 打印request
     logger.info(f"request: {request}")
+    
+    # 处理可选字段的默认值
+    report_date = request.reportDate or datetime.now().strftime("%Y%m%d%H%M%S")
+    
     # 构建报告数据
     report_data = ReportData(
         card_no=request.cardNo,
-        report_date=request.reportDate,
+        report_date=report_date,
         report_type=ReportType.MICROBIOLOGY,
         data={
             "cardNo": request.cardNo,
-            "reportDate": request.reportDate,
+            "reportDate": report_date,
             "microbeResultList": request.microbeResultList,
             "bacterialResultList": request.bacterialResultList,
             "drugSensitivityList": request.drugSensitivityList,
-            "diagnosisDate": request.diagnosisDate,
-            "testResultCode": request.testResultCode,
-            "testResultName": request.testResultName,
-            "testQuantifyResult": request.testQuantifyResult,
-            "testQuantifyResultUnit": request.testQuantifyResultUnit
+            "diagnosisDate": request.diagnosisDate or "",
+            "testResultCode": request.testResultCode or "",
+            "testResultName": request.testResultName or "",
+            "testQuantifyResult": request.testQuantifyResult or "",
+            "testQuantifyResultUnit": request.testQuantifyResultUnit or ""
         },
-        dept_code=request.deptCode,
-        dept_name=request.deptName,
-        diagnosis_code=request.diagnosisCode,
-        diagnosis_name=request.diagnosisName
+        dept_code=request.deptCode or "",
+        dept_name=request.deptName or "",
+        diagnosis_code=request.diagnosisCode or "",
+        diagnosis_name=request.diagnosisName or ""
     )
     # 打印report_data
     logger.info(f"report_data: {report_data}")
@@ -746,22 +697,27 @@ async def create_examination_report(
     """
     # 打印request
     logger.info(f"request: {request}")
+    
+    # 处理可选字段的默认值
+    report_date = request.reportDate or datetime.now().strftime("%Y%m%d%H%M%S")
+    
     # 构建报告数据
     report_data = ReportData(
         card_no=request.cardNo,
-        report_date=request.reportDate,
+        report_date=report_date,
         report_type=ReportType.EXAMINATION,
         data={
             "cardNo": request.cardNo,
-            "reportDate": request.reportDate,
-            "examResultCode": request.examResultCode,
-            "examResultName": request.examResultName,
-            "examQuantifyResult": request.examQuantifyResult,
-            "examQuantifyResultUnit": request.examQuantifyResultUnit,
-            "examObservation": request.examObservation,
-            "examResult": request.examResult
+            "reportDate": report_date,
+            "patientNo": request.patientNo or "",
+            "examResultCode": request.examResultCode or "",
+            "examResultName": request.examResultName or "",
+            "examQuantifyResult": request.examQuantifyResult or "",
+            "examQuantifyResultUnit": request.examQuantifyResultUnit or "",
+            "examObservation": request.examObservation or "",
+            "examResult": request.examResult or ""
         },
-        patient_no=request.patientNo
+        patient_no=request.patientNo or ""
     )
     # 打印report_data
     logger.info(f"report_data: {report_data}")
@@ -788,31 +744,35 @@ async def create_pathology_report(
     """
     # 打印request
     logger.info(f"request: {request}")
+    
+    # 处理reportDate为None的情况，使用当前时间
+    report_date = request.reportDate or datetime.now().strftime("%Y%m%d%H%M%S")
+    
     # 构建报告数据
     report_data = ReportData(
         card_no=request.cardNo,
-        report_date=request.reportDate,
+        report_date=report_date,
         report_type=ReportType.PATHOLOGY,
         data={
             "cardNo": request.cardNo,
-            "reportDate": request.reportDate,
-            "chiefComplaint": request.chiefComplaint,
-            "symptomDescribe": request.symptomDescribe,
-            "symptomStartTime": request.symptomStartTime,
-            "symptomEndTime": request.symptomEndTime,
-            "examResultCode": request.examResultCode,
-            "examResultName": request.examResultName,
-            "examQuantifyResult": request.examQuantifyResult,
-            "examQuantifyResultUnit": request.examQuantifyResultUnit,
-            "diagnosisDescribe": request.diagnosisDescribe,
-            "examObservation": request.examObservation,
-            "examResult": request.examResult
+            "reportDate": report_date,
+            "chiefComplaint": request.chiefComplaint or "",
+            "symptomDescribe": request.symptomDescribe or "",
+            "symptomStartTime": request.symptomStartTime or "",
+            "symptomEndTime": request.symptomEndTime or "",
+            "examResultCode": request.examResultCode or "",
+            "examResultName": request.examResultName or "",
+            "examQuantifyResult": request.examQuantifyResult or "",
+            "examQuantifyResultUnit": request.examQuantifyResultUnit or "",
+            "diagnosisDescribe": request.diagnosisDescribe or "",
+            "examObservation": request.examObservation or "",
+            "examResult": request.examResult or ""
         },
-        patient_no=request.patientNo,
-        dept_code=request.deptCode,
-        dept_name=request.deptName,
-        diagnosis_code=request.diagnosisCode,
-        diagnosis_name=request.diagnosisName
+        patient_no=request.patientNo or "",
+        dept_code=request.deptCode or "",
+        dept_name=request.deptName or "",
+        diagnosis_code=request.diagnosisCode or "",
+        diagnosis_name=request.diagnosisName or ""
     )
     # 打印report_data
     logger.info(f"report_data: {report_data}")
