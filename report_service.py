@@ -179,13 +179,24 @@ class ReportProcessingService:
         }
         
         if report_data.report_type == ReportType.ROUTINE_LAB:
-            analysis_data["resultList"] = report_data.data["resultList"]
+            # 将Pydantic对象转换为字典
+            result_list = report_data.data["resultList"]
+            if result_list and hasattr(result_list[0], 'dict'):
+                # 如果是Pydantic对象，转换为字典
+                analysis_data["resultList"] = [item.dict() if hasattr(item, 'dict') else item for item in result_list]
+            else:
+                analysis_data["resultList"] = result_list
         
         elif report_data.report_type == ReportType.MICROBIOLOGY:
+            # 将Pydantic对象转换为字典
+            microbe_list = report_data.data["microbeResultList"]
+            bacterial_list = report_data.data["bacterialResultList"]
+            drug_list = report_data.data["drugSensitivityList"]
+            
             analysis_data.update({
-                "microbeResultList": report_data.data["microbeResultList"],
-                "bacterialResultList": report_data.data["bacterialResultList"],
-                "drugSensitivityList": report_data.data["drugSensitivityList"],
+                "microbeResultList": [item.dict() if hasattr(item, 'dict') else item for item in microbe_list] if microbe_list else [],
+                "bacterialResultList": [item.dict() if hasattr(item, 'dict') else item for item in bacterial_list] if bacterial_list else [],
+                "drugSensitivityList": [item.dict() if hasattr(item, 'dict') else item for item in drug_list] if drug_list else [],
                 "deptCode": report_data.dept_code,
                 "deptName": report_data.dept_name,
                 "diagnosisCode": report_data.diagnosis_code,
@@ -221,13 +232,22 @@ class ReportProcessingService:
     def prepare_database_data(self, report_data: ReportData) -> Dict[str, Any]:
         """准备用于数据库存储的数据"""
         if report_data.report_type == ReportType.ROUTINE_LAB:
-            return report_data.data["resultList"]
+            # 将Pydantic对象转换为字典
+            result_list = report_data.data["resultList"]
+            if result_list and hasattr(result_list[0], 'dict'):
+                return [item.dict() if hasattr(item, 'dict') else item for item in result_list]
+            return result_list
         
         elif report_data.report_type == ReportType.MICROBIOLOGY:
+            # 将Pydantic对象转换为字典
+            microbe_list = report_data.data["microbeResultList"]
+            bacterial_list = report_data.data["bacterialResultList"]
+            drug_list = report_data.data["drugSensitivityList"]
+            
             return {
-                "microbe_result_list": report_data.data["microbeResultList"],
-                "bacterial_result_list": report_data.data["bacterialResultList"],
-                "drug_sensitivity_list": report_data.data["drugSensitivityList"],
+                "microbe_result_list": [item.dict() if hasattr(item, 'dict') else item for item in microbe_list] if microbe_list else [],
+                "bacterial_result_list": [item.dict() if hasattr(item, 'dict') else item for item in bacterial_list] if bacterial_list else [],
+                "drug_sensitivity_list": [item.dict() if hasattr(item, 'dict') else item for item in drug_list] if drug_list else [],
                 "diagnosis_date": report_data.data.get("diagnosisDate"),
                 "test_result_code": report_data.data.get("testResultCode"),
                 "test_result_name": report_data.data.get("testResultName"),
