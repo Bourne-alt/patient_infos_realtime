@@ -244,7 +244,7 @@ async def health_check(db: Session = Depends(get_health_check_db)):
                 if LLM_API_KEY and LLM_API_KEY != "sk-proj-1234567890":
                     test_headers["Authorization"] = f"Bearer {LLM_API_KEY}"
                 
-                async with httpx.AsyncClient(timeout=5.0) as client:
+                async with httpx.AsyncClient(timeout=30.0) as client:
                     response = await client.get(
                         LLM_API_URL.replace("/api/generate", "/api/tags"),
                         headers=test_headers
@@ -403,7 +403,9 @@ async def analyze_with_llm(report_type: str, report_data: Dict[str, Any], histor
                 temperature=0.7,
                 max_tokens=2000,
                 openai_api_key=LLM_API_KEY if LLM_API_KEY != "sk-proj-1234567890" else None,
-                base_url=LLM_API_URL
+                base_url=LLM_API_URL,
+                request_timeout=150,  # 300秒超时
+                max_retries=2        # 最多重试2次
             )
             
             # 创建消息
@@ -419,7 +421,8 @@ async def analyze_with_llm(report_type: str, report_data: Dict[str, Any], histor
             
         except Exception as llm_error:
             logger.error(f"LangChain调用错误: {str(llm_error)}")
-            return f"大模型分析失败: {str(llm_error)}"
+            # 降级返回基础分析
+            return f"大模型服务暂不可用，基础分析：{report_type}报告已接收并存储，请稍后重试获取AI分析结果。"
                 
     except asyncio.TimeoutError:
         logger.error("LLM分析超时")

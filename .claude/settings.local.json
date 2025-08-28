@@ -1,7 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(chmod:*)",
+      "Bash(grep:*)",
+      "Bash(ping:*)",
+      "Bash(export OPENAI_BASE_URL=https://api.siliconflow.cn/v1)",
+      "Bash(echo:*)",
+      "Bash(curl:*)"
     ],
     "deny": []
   }
