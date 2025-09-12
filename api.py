@@ -404,7 +404,7 @@ async def analyze_with_llm(report_type: str, report_data: Dict[str, Any], histor
                 max_tokens=2000,
                 openai_api_key=LLM_API_KEY if LLM_API_KEY != "sk-proj-1234567890" else None,
                 base_url=LLM_API_URL,
-                request_timeout=150,  # 300秒超时
+                request_timeout=200,  # 300秒超时
                 max_retries=2        # 最多重试2次
             )
             

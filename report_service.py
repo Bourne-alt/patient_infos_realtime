@@ -239,24 +239,57 @@ class ReportProcessingService:
             return result_list
         
         elif report_data.report_type == ReportType.MICROBIOLOGY:
-            # 将Pydantic对象转换为字典
+            # 将Pydantic对象转换为字典，返回列表格式保持一致
             microbe_list = report_data.data["microbeResultList"]
             bacterial_list = report_data.data["bacterialResultList"]
             drug_list = report_data.data["drugSensitivityList"]
             
-            return {
-                "microbe_result_list": [item.dict() if hasattr(item, 'dict') else item for item in microbe_list] if microbe_list else [],
-                "bacterial_result_list": [item.dict() if hasattr(item, 'dict') else item for item in bacterial_list] if bacterial_list else [],
-                "drug_sensitivity_list": [item.dict() if hasattr(item, 'dict') else item for item in drug_list] if drug_list else [],
-                "diagnosis_date": report_data.data.get("diagnosisDate"),
-                "test_result_code": report_data.data.get("testResultCode"),
-                "test_result_name": report_data.data.get("testResultName"),
-                "test_quantify_result": report_data.data.get("testQuantifyResult"),
-                "test_quantify_result_unit": report_data.data.get("testQuantifyResultUnit")
-            }
+            # 构建统一的结果列表
+            result_list = []
+            
+            # 添加微生物结果
+            if microbe_list:
+                for item in microbe_list:
+                    result_item = item.dict() if hasattr(item, 'dict') else item
+                    result_item["result_type"] = "microbe"
+                    result_list.append(result_item)
+            
+            # 添加细菌结果
+            if bacterial_list:
+                for item in bacterial_list:
+                    result_item = item.dict() if hasattr(item, 'dict') else item
+                    result_item["result_type"] = "bacterial"
+                    result_list.append(result_item)
+            
+            # 添加药敏结果
+            if drug_list:
+                for item in drug_list:
+                    result_item = item.dict() if hasattr(item, 'dict') else item
+                    result_item["result_type"] = "drug_sensitivity"
+                    result_list.append(result_item)
+            
+            # 添加诊断信息作为单独的结果项
+            if any([report_data.data.get("diagnosisDate"), report_data.data.get("testResultCode"), 
+                   report_data.data.get("testResultName"), report_data.data.get("testQuantifyResult")]):
+                diagnosis_item = {
+                    "result_type": "diagnosis",
+                    "diagnosis_date": report_data.data.get("diagnosisDate"),
+                    "test_result_code": report_data.data.get("testResultCode"),
+                    "test_result_name": report_data.data.get("testResultName"),
+                    "test_quantify_result": report_data.data.get("testQuantifyResult"),
+                    "test_quantify_result_unit": report_data.data.get("testQuantifyResultUnit")
+                }
+                result_list.append(diagnosis_item)
+            
+            return result_list
         
         elif report_data.report_type == ReportType.EXAMINATION:
-            return {
+            # 返回列表格式保持一致
+            result_list = []
+            
+            # 构建检查结果项
+            exam_item = {
+                "result_type": "examination",
                 "exam_result_code": report_data.data.get("examResultCode"),
                 "exam_result_name": report_data.data.get("examResultName"),
                 "exam_quantify_result": report_data.data.get("examQuantifyResult"),
@@ -264,9 +297,17 @@ class ReportProcessingService:
                 "exam_observation": report_data.data.get("examObservation"),
                 "exam_result": report_data.data.get("examResult")
             }
+            result_list.append(exam_item)
+            
+            return result_list
         
         elif report_data.report_type == ReportType.PATHOLOGY:
-            return {
+            # 返回列表格式保持一致
+            result_list = []
+            
+            # 构建病理结果项
+            pathology_item = {
+                "result_type": "pathology",
                 "chief_complaint": report_data.data.get("chiefComplaint"),
                 "symptom_describe": report_data.data.get("symptomDescribe"),
                 "symptom_start_time": report_data.data.get("symptomStartTime"),
@@ -279,6 +320,9 @@ class ReportProcessingService:
                 "exam_observation": report_data.data.get("examObservation"),
                 "exam_result": report_data.data.get("examResult")
             }
+            result_list.append(pathology_item)
+            
+            return result_list
         
         return {}
     
