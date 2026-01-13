@@ -423,6 +423,7 @@ class ReportProcessingService:
                 diagnosis_code=report_data.diagnosis_code,
                 diagnosis_name=report_data.diagnosis_name,
                 ai_analysis=ai_analysis,
+                is_read=False,
                 processed_at=datetime.utcnow()
             )
             

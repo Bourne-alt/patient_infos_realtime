@@ -32,7 +32,10 @@ class MedicalReport(Base):
     
     # AI分析结果
     ai_analysis = Column(Text, comment="AI分析结果")
-    
+
+    # 已读状态
+    is_read = Column(Boolean, default=False, nullable=False, index=True, comment="是否已读")
+
     # 时间戳
     processed_at = Column(DateTime, default=datetime.utcnow, comment="处理时间")
     created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
